@@ -1,12 +1,37 @@
 import { BiometricSearchForm } from '@/components/BiometricSearchForm';
 import { TransactionTable } from '@/components/TransactionTable';
 import { BiometricSummaryCard } from '@/components/BiometricSummaryCard';
-import { useBiometricData } from '@/hooks/useBiometricData';
+import { useBiometricData, Transaction } from '@/hooks/useBiometricData';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle } from 'lucide-react';
+import { useMemo } from 'react';
+
+// Calculate total out-of-office time from transactions
+function calculateTotalOutTime(transactions: Transaction[]): number {
+  let total = 0;
+  for (let i = 0; i < transactions.length; i++) {
+    const current = transactions[i];
+    const next = transactions[i + 1];
+    
+    if (current.punchType === 'Out' && next && next.punchType === 'In') {
+      const outTime = new Date(current.punchTime).getTime();
+      const inTime = new Date(next.punchTime).getTime();
+      const duration = inTime - outTime;
+      if (duration > 0) {
+        total += duration;
+      }
+    }
+  }
+  return total;
+}
 
 const Index = () => {
   const { data, loading, error, fetchData } = useBiometricData();
+
+  const totalOutOfOfficeTime = useMemo(() => {
+    if (!data?.transactions) return 0;
+    return calculateTotalOutTime(data.transactions);
+  }, [data?.transactions]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-muted p-4 md:p-8">
@@ -34,9 +59,13 @@ const Index = () => {
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <BiometricSummaryCard 
               summary={data.summary} 
-              dailyBreakdown={data.dailyBreakdown} 
+              dailyBreakdown={data.dailyBreakdown}
+              totalOutOfOfficeTime={totalOutOfOfficeTime}
             />
-            <TransactionTable transactions={data.transactions} />
+            <TransactionTable 
+              transactions={data.transactions}
+              totalOutOfOfficeTime={totalOutOfOfficeTime}
+            />
           </div>
         )}
       </div>

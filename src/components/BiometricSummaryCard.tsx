@@ -2,14 +2,18 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { BiometricSummary, DailyBreakdown } from '@/hooks/useBiometricData';
 import { msToTime, formatDateTime } from '@/lib/biometric-utils';
-import { Clock, Target, Timer, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Clock, Target, Timer, AlertTriangle, CheckCircle, Coffee } from 'lucide-react';
 
 interface BiometricSummaryCardProps {
   summary: BiometricSummary;
   dailyBreakdown: DailyBreakdown[];
+  totalOutOfOfficeTime: number;
 }
 
-export function BiometricSummaryCard({ summary, dailyBreakdown }: BiometricSummaryCardProps) {
+export function BiometricSummaryCard({ summary, dailyBreakdown, totalOutOfOfficeTime }: BiometricSummaryCardProps) {
+  const outTimeLimitMs = 30 * 60 * 1000; // 30 minutes
+  const isOutTimeExceeded = totalOutOfOfficeTime > outTimeLimitMs;
+
   return (
     <div className="space-y-4">
       <Card>
@@ -39,11 +43,27 @@ export function BiometricSummaryCard({ summary, dailyBreakdown }: BiometricSumma
               </div>
             </div>
 
-            <div className="flex items-center gap-3 p-4 rounded-lg bg-muted">
-              <Timer className="h-8 w-8 text-warning" />
-              <div>
-                <p className="text-sm text-muted-foreground">Total Out Time (excl. Lunch)</p>
-                <p className="text-lg font-semibold">{msToTime(summary.totalOutTimeMs)}</p>
+            {/* Total Out of Office Time - Synced with Transaction Table */}
+            <div className={`flex items-center gap-3 p-4 rounded-lg ${isOutTimeExceeded ? 'bg-destructive/10 border border-destructive/30' : 'bg-warning/10 border border-warning/30'}`}>
+              <Coffee className={`h-8 w-8 ${isOutTimeExceeded ? 'text-destructive' : 'text-warning'}`} />
+              <div className="flex-1">
+                <p className="text-sm text-muted-foreground">Total Out of Office</p>
+                <div className="flex items-center gap-2">
+                  <p className={`text-lg font-semibold ${isOutTimeExceeded ? 'text-destructive' : 'text-warning'}`}>
+                    {msToTime(totalOutOfOfficeTime)}
+                  </p>
+                  {isOutTimeExceeded ? (
+                    <Badge variant="destructive" className="text-xs">
+                      <AlertTriangle className="h-3 w-3 mr-1" />
+                      Exceeded 30m!
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs text-success border-success">
+                      <CheckCircle className="h-3 w-3 mr-1" />
+                      Within Limit
+                    </Badge>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -91,12 +111,12 @@ export function BiometricSummaryCard({ summary, dailyBreakdown }: BiometricSumma
               {dailyBreakdown.map((day) => (
                 <div
                   key={day.date}
-                  className="flex items-center justify-between p-4 rounded-lg bg-muted"
+                  className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-lg bg-muted gap-2"
                 >
                   <div>
                     <p className="font-medium">{day.date}</p>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex flex-wrap items-center gap-3 sm:gap-4">
                     <div className="text-right">
                       <p className="text-xs text-muted-foreground">In Time</p>
                       <p className="font-semibold text-success">{msToTime(day.inMs)}</p>
