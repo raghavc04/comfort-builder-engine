@@ -8,6 +8,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 
 interface TransactionTableProps {
   transactions: Transaction[];
+  totalOutOfOfficeTime: number;
 }
 
 interface ProcessedTransaction extends Transaction {
@@ -152,7 +153,7 @@ function MobileTransactionCard({ row, index }: { row: DisplayRow; index: number 
   return null;
 }
 
-export function TransactionTable({ transactions }: TransactionTableProps) {
+export function TransactionTable({ transactions, totalOutOfOfficeTime }: TransactionTableProps) {
   const isMobile = useIsMobile();
 
   if (transactions.length === 0) {
@@ -168,8 +169,7 @@ export function TransactionTable({ transactions }: TransactionTableProps) {
     );
   }
 
-  const { processed, displayRows } = processTransactionsWithBreaks(transactions);
-  const totalOutTime = processed.reduce((acc, t) => acc + (t.breakDuration || 0), 0);
+  const { displayRows } = processTransactionsWithBreaks(transactions);
 
   return (
     <Card>
@@ -181,10 +181,10 @@ export function TransactionTable({ transactions }: TransactionTableProps) {
           </span>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="secondary">{transactions.length} records</Badge>
-            {totalOutTime > 0 && (
+            {totalOutOfOfficeTime > 0 && (
               <Badge variant="outline" className="flex items-center gap-1 text-warning border-warning">
                 <Coffee className="h-3 w-3" />
-                Total Out: {msToTime(totalOutTime)}
+                Total Out: {msToTime(totalOutOfOfficeTime)}
               </Badge>
             )}
           </div>
