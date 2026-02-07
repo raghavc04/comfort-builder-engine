@@ -3,19 +3,31 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Transaction } from '@/hooks/useBiometricData';
 import { formatDateTime, msToTime } from '@/lib/biometric-utils';
-import { LogIn, LogOut, Clock } from 'lucide-react';
+import { LogIn, LogOut, Clock, Coffee } from 'lucide-react';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface TransactionTableProps {
   transactions: Transaction[];
 }
 
 interface ProcessedTransaction extends Transaction {
-  breakDuration?: number; // ms of break after this OUT punch
-  runningOutTotal?: number; // cumulative out time up to this point
+  breakDuration?: number;
+  runningOutTotal?: number;
 }
 
-function processTransactionsWithBreaks(transactions: Transaction[]): ProcessedTransaction[] {
+interface DisplayRow {
+  type: 'transaction' | 'out-of-office';
+  transaction?: ProcessedTransaction;
+  outOfOffice?: {
+    startTime: string;
+    endTime: string;
+    duration: number;
+  };
+}
+
+function processTransactionsWithBreaks(transactions: Transaction[]): { processed: ProcessedTransaction[], displayRows: DisplayRow[] } {
   const processed: ProcessedTransaction[] = [];
+  const displayRows: DisplayRow[] = [];
   let runningOutTotal = 0;
 
   for (let i = 0; i < transactions.length; i++) {
@@ -24,29 +36,125 @@ function processTransactionsWithBreaks(transactions: Transaction[]): ProcessedTr
 
     let breakDuration: number | undefined;
 
-    // If current is OUT and next is IN, calculate break duration
     if (current.punchType === 'Out' && next && next.punchType === 'In') {
       const outTime = new Date(current.punchTime).getTime();
       const inTime = new Date(next.punchTime).getTime();
       breakDuration = inTime - outTime;
       
-      // Only count positive breaks
       if (breakDuration > 0) {
         runningOutTotal += breakDuration;
       }
     }
 
-    processed.push({
+    const processedTransaction: ProcessedTransaction = {
       ...current,
       breakDuration: breakDuration && breakDuration > 0 ? breakDuration : undefined,
       runningOutTotal: current.punchType === 'Out' && breakDuration && breakDuration > 0 ? runningOutTotal : undefined
-    });
+    };
+
+    processed.push(processedTransaction);
+    displayRows.push({ type: 'transaction', transaction: processedTransaction });
+
+    // Add out-of-office row after OUT punch if there's a following IN
+    if (breakDuration && breakDuration > 0) {
+      displayRows.push({
+        type: 'out-of-office',
+        outOfOffice: {
+          startTime: current.punchTime,
+          endTime: next.punchTime,
+          duration: breakDuration
+        }
+      });
+    }
   }
 
-  return processed;
+  return { processed, displayRows };
+}
+
+function formatTime(dateTimeStr: string): string {
+  try {
+    const date = new Date(dateTimeStr);
+    return date.toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  } catch {
+    return dateTimeStr;
+  }
+}
+
+// Mobile Card View
+function MobileTransactionCard({ row, index }: { row: DisplayRow; index: number }) {
+  if (row.type === 'out-of-office' && row.outOfOffice) {
+    return (
+      <div className="bg-warning/10 border border-warning/30 rounded-lg p-3 mx-2">
+        <div className="flex items-center gap-2 text-warning">
+          <Coffee className="h-4 w-4" />
+          <span className="font-medium text-sm">Out of Office</span>
+        </div>
+        <div className="mt-1 text-sm text-muted-foreground">
+          {formatTime(row.outOfOffice.startTime)} → {formatTime(row.outOfOffice.endTime)}
+        </div>
+        <Badge variant="outline" className="mt-2 text-warning border-warning">
+          {msToTime(row.outOfOffice.duration)}
+        </Badge>
+      </div>
+    );
+  }
+
+  if (row.type === 'transaction' && row.transaction) {
+    const t = row.transaction;
+    return (
+      <div className="bg-card border rounded-lg p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium">{formatDateTime(t.punchTime)}</span>
+          {t.punchType === 'In' ? (
+            <Badge className="bg-success hover:bg-success/90">
+              <LogIn className="h-3 w-3 mr-1" />
+              IN
+            </Badge>
+          ) : (
+            <Badge variant="destructive">
+              <LogOut className="h-3 w-3 mr-1" />
+              OUT
+            </Badge>
+          )}
+        </div>
+        
+        <div className="flex flex-wrap gap-2 text-xs">
+          <Badge variant="outline">{t.location}</Badge>
+          <span className="text-muted-foreground">{t.deviceName}</span>
+        </div>
+
+        {(t.breakDuration || t.runningOutTotal) && (
+          <div className="flex gap-3 pt-2 border-t">
+            {t.breakDuration && (
+              <div className="text-xs">
+                <span className="text-muted-foreground">Break: </span>
+                <span className="text-warning font-medium">{msToTime(t.breakDuration)}</span>
+              </div>
+            )}
+            {t.runningOutTotal && (
+              <div className="text-xs">
+                <span className="text-muted-foreground">Total: </span>
+                <Badge variant="outline" className="text-warning border-warning text-xs">
+                  {msToTime(t.runningOutTotal)}
+                </Badge>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return null;
 }
 
 export function TransactionTable({ transactions }: TransactionTableProps) {
+  const isMobile = useIsMobile();
+
   if (transactions.length === 0) {
     return (
       <Card>
@@ -60,87 +168,121 @@ export function TransactionTable({ transactions }: TransactionTableProps) {
     );
   }
 
-  const processedTransactions = processTransactionsWithBreaks(transactions);
-  const totalOutTime = processedTransactions.reduce((acc, t) => acc + (t.breakDuration || 0), 0);
+  const { processed, displayRows } = processTransactionsWithBreaks(transactions);
+  const totalOutTime = processed.reduce((acc, t) => acc + (t.breakDuration || 0), 0);
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <span className="flex items-center gap-2">
             <span className="text-2xl">📋</span>
             Attendance Records
           </span>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge variant="secondary">{transactions.length} records</Badge>
             {totalOutTime > 0 && (
-              <Badge variant="outline" className="flex items-center gap-1">
-                <Clock className="h-3 w-3" />
-                Total Break: {msToTime(totalOutTime)}
+              <Badge variant="outline" className="flex items-center gap-1 text-warning border-warning">
+                <Coffee className="h-3 w-3" />
+                Total Out: {msToTime(totalOutTime)}
               </Badge>
             )}
           </div>
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date/Time</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Break Duration</TableHead>
-                <TableHead>Running Total</TableHead>
-                <TableHead>Device Name</TableHead>
-                <TableHead>Location</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {processedTransactions.map((transaction, index) => (
-                <TableRow key={`${transaction.punchTime}-${index}`}>
-                  <TableCell className="font-medium">
-                    {formatDateTime(transaction.punchTime)}
-                  </TableCell>
-                  <TableCell>
-                    {transaction.punchType === 'In' ? (
-                      <Badge className="bg-success hover:bg-success/90">
-                        <LogIn className="h-3 w-3 mr-1" />
-                        IN
-                      </Badge>
-                    ) : (
-                      <Badge variant="destructive">
-                        <LogOut className="h-3 w-3 mr-1" />
-                        OUT
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {transaction.breakDuration ? (
-                      <span className="text-warning font-medium">
-                        {msToTime(transaction.breakDuration)}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {transaction.runningOutTotal ? (
-                      <Badge variant="outline" className="text-warning border-warning">
-                        {msToTime(transaction.runningOutTotal)}
-                      </Badge>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell>{transaction.deviceName}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{transaction.location}</Badge>
-                  </TableCell>
+        {isMobile ? (
+          <div className="space-y-3">
+            {displayRows.map((row, index) => (
+              <MobileTransactionCard key={index} row={row} index={index} />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date/Time</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Break Duration</TableHead>
+                  <TableHead>Running Total</TableHead>
+                  <TableHead>Device Name</TableHead>
+                  <TableHead>Location</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {displayRows.map((row, index) => {
+                  if (row.type === 'out-of-office' && row.outOfOffice) {
+                    return (
+                      <TableRow key={`out-${index}`} className="bg-warning/5 hover:bg-warning/10">
+                        <TableCell colSpan={6}>
+                          <div className="flex items-center gap-3 py-1">
+                            <Coffee className="h-4 w-4 text-warning" />
+                            <span className="text-warning font-medium">Out of Office:</span>
+                            <span className="text-muted-foreground">
+                              {formatTime(row.outOfOffice.startTime)} → {formatTime(row.outOfOffice.endTime)}
+                            </span>
+                            <Badge variant="outline" className="text-warning border-warning ml-auto">
+                              {msToTime(row.outOfOffice.duration)}
+                            </Badge>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }
+
+                  if (row.type === 'transaction' && row.transaction) {
+                    const t = row.transaction;
+                    return (
+                      <TableRow key={`${t.punchTime}-${index}`}>
+                        <TableCell className="font-medium">
+                          {formatDateTime(t.punchTime)}
+                        </TableCell>
+                        <TableCell>
+                          {t.punchType === 'In' ? (
+                            <Badge className="bg-success hover:bg-success/90">
+                              <LogIn className="h-3 w-3 mr-1" />
+                              IN
+                            </Badge>
+                          ) : (
+                            <Badge variant="destructive">
+                              <LogOut className="h-3 w-3 mr-1" />
+                              OUT
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {t.breakDuration ? (
+                            <span className="text-warning font-medium">
+                              {msToTime(t.breakDuration)}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {t.runningOutTotal ? (
+                            <Badge variant="outline" className="text-warning border-warning">
+                              {msToTime(t.runningOutTotal)}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>{t.deviceName}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{t.location}</Badge>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }
+
+                  return null;
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
