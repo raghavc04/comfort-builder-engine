@@ -4,10 +4,10 @@ import { CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EmployeeCombobox } from '@/components/EmployeeCombobox';
 
 interface BiometricSearchFormProps {
   onSearch: (employeeId: string, fromDate: string, toDate: string) => void;
@@ -39,14 +39,8 @@ export function BiometricSearchForm({ onSearch, loading }: BiometricSearchFormPr
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
-            <Label htmlFor="employeeId">Employee / Biometric ID</Label>
-            <Input
-              id="employeeId"
-              placeholder="Enter your Employee ID"
-              value={employeeId}
-              onChange={(e) => setEmployeeId(e.target.value)}
-              className="text-lg"
-            />
+            <Label>Employee / Biometric ID</Label>
+            <EmployeeCombobox value={employeeId} onChange={setEmployeeId} />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
